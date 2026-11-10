@@ -1,0 +1,133 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function aluEmail() {
+      return request.auth.token.email.lower()
+        .matches('.*@(alustudent|alueducation)[.]com$');
+    }
+
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true && aluEmail();
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isStaff() {
+      return verified()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && profile().role == 'staff';
+    }
+
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function validCategory(value) {
+      return value in ['facilities', 'water', 'electricity', 'furniture',
+                       'sanitation', 'safety', 'internet', 'other'];
+    }
+
+    function validPriority(value) {
+      return value in ['low', 'medium', 'high'];
+    }
+
+    function validStatus(value) {
+      return value in ['submitted', 'underReview', 'inProgress', 'resolved', 'rejected'];
+    }
+
+    function validImage(data) {
+      return (data.get('imageUrl', null) == null || data.imageUrl is string)
+        && (data.get('imagePath', null) == null || data.imagePath is string);
+    }
+
+    function validDetails(data) {
+      return data.title is string && data.title.size() >= 5 && data.title.size() <= 80
+        && data.description is string && data.description.size() >= 15
+        && data.description.size() <= 1000
+        && data.location is string && data.location.size() >= 3 && data.location.size() <= 100
+        && validCategory(data.category)
+        && validPriority(data.priority)
+        && data.isAnonymous is bool
+        && data.reporterName is string
+        && validImage(data);
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && aluEmail()
+        && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'createdAt'])
+        && request.resource.data.role == 'student'
+        && request.resource.data.email == request.auth.token.email;
+
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && changed().hasOnly(['name']);
+
+      allow delete: if false;
+    }
+
+    match /incidents/{incidentId} {
+      allow read: if verified();
+
+      allow create: if verified()
+        && !isStaff()
+        && request.resource.data.keys().hasOnly([
+             'title', 'description', 'category', 'location', 'priority',
+             'status', 'reporterId', 'reporterName', 'isAnonymous',
+             'imageUrl', 'imagePath', 'supporters', 'history',
+             'createdAt', 'updatedAt'])
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.supporters.size() == 0
+        && request.resource.data.history.size() == 1
+        && request.resource.data.createdAt == request.time
+        && validDetails(request.resource.data);
+
+      allow update: if
+        (
+          isStaff()
+          && changed().hasOnly(['status', 'history', 'updatedAt', 'resolvedAt'])
+          && validStatus(request.resource.data.status)
+          && request.resource.data.history.size() == resource.data.history.size() + 1
+        )
+        ||
+        (
+          verified()
+          && resource.data.reporterId == request.auth.uid
+          && resource.data.status == 'submitted'
+          && changed().hasOnly([
+               'title', 'description', 'category', 'location', 'priority',
+               'isAnonymous', 'reporterName', 'imageUrl', 'imagePath', 'updatedAt'])
+          && validDetails(request.resource.data)
+        )
+        ||
+        (
+          verified()
+          && !isStaff()
+          && resource.data.reporterId != request.auth.uid
+          && changed().hasOnly(['supporters'])
+          && request.resource.data.supporters.toSet()
+               .difference(resource.data.supporters.toSet())
+               .union(resource.data.supporters.toSet()
+                 .difference(request.resource.data.supporters.toSet()))
+               .hasOnly([request.auth.uid])
+        );
+
+      allow delete: if isStaff()
+        || (verified()
+            && resource.data.reporterId == request.auth.uid
+            && resource.data.status == 'submitted');
+    }
+  }
+}

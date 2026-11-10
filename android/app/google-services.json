@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "70782432683",
+    "project_id": "campusfix-gael",
+    "storage_bucket": "campusfix-gael.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:70782432683:android:9db065f61a66192c918eee",
+        "android_client_info": {
+          "package_name": "com.alu.campusfix"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA05sW2Ozi-Z-WV2PAMLFBmB4rbueVhBSw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
